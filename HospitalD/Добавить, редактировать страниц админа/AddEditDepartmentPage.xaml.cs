@@ -8,7 +8,7 @@ namespace HospitalD
 {
     public partial class AddEditDepartmentPage : Page
     {
-        private Departments _currentDepartment;
+        private readonly Departments _currentDepartment; // Добавлено readonly
         private readonly HospitalDRmEntities _context = new HospitalDRmEntities();
 
         public AddEditDepartmentPage(Departments selectedDepartment = null)
