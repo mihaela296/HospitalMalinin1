@@ -35,35 +35,42 @@ namespace HospitalD
 
         private void UpdateDepartments()
         {
-            var currentDepartments = _db.Departments.AsQueryable();
+            // Сначала получаем все данные
+            var allDepartments = _db.Departments
+                .AsNoTracking()
+                .ToList(); // Материализуем запрос
 
-            // Фильтрация по первой букве
+            // Применяем фильтры к данным в памяти
+            var filteredDepartments = allDepartments.AsQueryable();
+
+            // Фильтрация по первой букве (теперь работает в памяти)
             if (FirstLetterFilter.SelectedIndex > 0 &&
                 FirstLetterFilter.SelectedItem is ComboBoxItem selectedLetterItem)
             {
                 string letter = selectedLetterItem.Content.ToString();
-                currentDepartments = currentDepartments.Where(d =>
+                filteredDepartments = filteredDepartments.Where(d =>
                     d.Name.StartsWith(letter, StringComparison.OrdinalIgnoreCase));
             }
 
             // Фильтрация по названию
             if (!string.IsNullOrWhiteSpace(SearchDepartmentName.Text))
             {
-                currentDepartments = currentDepartments.Where(d =>
-                    d.Name.ToLower().Contains(SearchDepartmentName.Text.ToLower()));
+                string searchTerm = SearchDepartmentName.Text.ToLower();
+                filteredDepartments = filteredDepartments.Where(d =>
+                    d.Name.ToLower().Contains(searchTerm));
             }
 
             // Сортировка
             switch (SortDepartmentComboBox.SelectedIndex)
             {
-                case 0: currentDepartments = currentDepartments.OrderBy(d => d.ID_Department); break;
-                case 1: currentDepartments = currentDepartments.OrderBy(d => d.Name); break;
-                case 2: currentDepartments = currentDepartments.OrderByDescending(d => d.Name); break;
-                case 3: currentDepartments = currentDepartments.OrderBy(d => d.ID_Department); break;
-                case 4: currentDepartments = currentDepartments.OrderByDescending(d => d.ID_Department); break;
+                case 0: filteredDepartments = filteredDepartments.OrderBy(d => d.ID_Department); break;
+                case 1: filteredDepartments = filteredDepartments.OrderBy(d => d.Name); break;
+                case 2: filteredDepartments = filteredDepartments.OrderByDescending(d => d.Name); break;
+                case 3: filteredDepartments = filteredDepartments.OrderBy(d => d.ID_Department); break;
+                case 4: filteredDepartments = filteredDepartments.OrderByDescending(d => d.ID_Department); break;
             }
 
-            DepartmentsDataGrid.ItemsSource = currentDepartments.ToList();
+            DepartmentsDataGrid.ItemsSource = filteredDepartments.ToList();
         }
 
         private void FirstLetterFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)

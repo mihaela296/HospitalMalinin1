@@ -1,44 +1,116 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations;
-using System.Data.SqlClient;
+using System.Data.Entity;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
-using System.Windows.Shapes;
 
 namespace HospitalD
 {
-    /// <summary>
-    /// Логика взаимодействия для DepartmentsPage.xaml
-    /// </summary>
     public partial class PatientsPage : Page
     {
+        private readonly HospitalDRmEntities _db = new HospitalDRmEntities();
 
         public PatientsPage()
         {
             InitializeComponent();
-            PatientsDataGrid.ItemsSource = new HospitalDRmEntities().Patients.ToList();
+            LoadPatients();
+            InitializeBirthYearFilter();
         }
+
+        private void InitializeBirthYearFilter()
+        {
+            BirthYearFilter.Items.Clear();
+            BirthYearFilter.Items.Add(new ComboBoxItem() { Content = "Все года" });
+
+            var birthYears = _db.Patients
+                .Where(p => p.BirthDate.HasValue) // Фильтруем только тех, у кого есть дата рождения
+                .Select(p => p.BirthDate.Value.Year) // Берем Year только после проверки на null
+                .Distinct()
+                .OrderByDescending(y => y)
+                .ToList();
+
+            foreach (var year in birthYears)
+            {
+                BirthYearFilter.Items.Add(new ComboBoxItem() { Content = year.ToString() });
+            }
+
+            BirthYearFilter.SelectedIndex = 0;
+        }
+
+        private void LoadPatients()
+        {
+            UpdatePatients();
+        }
+
+        private void UpdatePatients()
+        {
+            var currentPatients = _db.Patients.AsQueryable();
+
+            // Фильтрация по году рождения
+            if (BirthYearFilter.SelectedIndex > 0 &&
+                BirthYearFilter.SelectedItem is ComboBoxItem selectedYearItem)
+            {
+                if (int.TryParse(selectedYearItem.Content.ToString(), out int selectedYear))
+                {
+                    currentPatients = currentPatients
+                        .Where(p => p.BirthDate.HasValue && p.BirthDate.Value.Year == selectedYear);
+                }
+            }
+
+            // Фильтрация по ФИО
+            if (!string.IsNullOrWhiteSpace(SearchPatientName.Text))
+            {
+                currentPatients = currentPatients.Where(p =>
+                    p.FullName.ToLower().Contains(SearchPatientName.Text.ToLower()));
+            }
+
+            // Сортировка
+            switch (SortPatientComboBox.SelectedIndex)
+            {
+                case 0: currentPatients = currentPatients.OrderBy(p => p.FullName); break;
+                case 1: currentPatients = currentPatients.OrderBy(p => p.FullName); break;
+                case 2: currentPatients = currentPatients.OrderByDescending(p => p.FullName); break;
+                case 3: currentPatients = currentPatients.OrderBy(p => p.BirthDate); break;
+                case 4: currentPatients = currentPatients.OrderByDescending(p => p.BirthDate); break;
+            }
+
+            PatientsDataGrid.ItemsSource = currentPatients.ToList();
+        }
+
+        private void BirthYearFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            UpdatePatients();
+        }
+
+        private void SearchPatientName_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            UpdatePatients();
+        }
+
+        private void SortPatientComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            UpdatePatients();
+        }
+
+        private void CleanFilter_OnClick(object sender, RoutedEventArgs e)
+        {
+            SearchPatientName.Text = string.Empty;
+            SortPatientComboBox.SelectedIndex = 0;
+            BirthYearFilter.SelectedIndex = 0;
+            UpdatePatients();
+        }
+
         private void ButtonEdit_OnClick(object sender, RoutedEventArgs e)
         {
-            var selectedPatient = (Patients)PatientsDataGrid.SelectedItem;
-
-            if(selectedPatient!= null)
+            if (PatientsDataGrid.SelectedItem is Patients selectedPatient)
             {
                 NavigationService.Navigate(new AddEditPatientPage(selectedPatient));
             }
             else
             {
-                MessageBox.Show("выберите пациента для редактирования!","Ошибка",MessageBoxButton.OK,MessageBoxImage.Warning);
+                MessageBox.Show("Выберите пациента для редактирования!",
+                    "Ошибка", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 
@@ -46,56 +118,45 @@ namespace HospitalD
         {
             NavigationService.Navigate(new AddEditPatientPage(null));
         }
+
         private void ButtonDel_OnClick(object sender, RoutedEventArgs e)
         {
-            var selectedPatient = (Patients)PatientsDataGrid.SelectedItem;
-
-            if (selectedPatient == null)
+            if (!(PatientsDataGrid.SelectedItem is Patients selectedPatient))
             {
-                MessageBox.Show("Выберите пациента для удаления!", "Ошибка",
-                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("Выберите пациента для удаления!",
+                    "Ошибка", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
-            using (var context = new HospitalDRmEntities())
+            if (MessageBox.Show($"Удалить пациента '{selectedPatient.FullName}'?", "Подтверждение",
+                    MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.No)
             {
-                try
+                return;
+            }
+
+            try
+            {
+                if (_db.Entry(selectedPatient).State == EntityState.Detached)
                 {
-                    // 1. Получаем пациента из базы, чтобы EF начал его отслеживать
-                    var patientToDelete = context.Patients
-                        .FirstOrDefault(p => p.ID_Patient == selectedPatient.ID_Patient);
-
-                    if (patientToDelete == null)
-                    {
-                        MessageBox.Show("Пациент не найден в базе данных!", "Ошибка",
-                            MessageBoxButton.OK, MessageBoxImage.Error);
-                        return;
-                    }
-
-                    // 2. Проверка связанных данных
-                    var hasRelatedData = context.Users.Any(u => u.ID_User == patientToDelete.ID_Patient);
-                    if (hasRelatedData)
-                    {
-                        MessageBox.Show("Невозможно удалить пациента, так как у него есть связанные данные!",
-                            "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
-                        return;
-                    }
-
-                    // 3. Удаление
-                    context.Patients.Remove(patientToDelete);
-                    context.SaveChanges();
-
-                    // 4. Обновление DataGrid
-                    PatientsDataGrid.ItemsSource = new HospitalDRmEntities().Patients.ToList();
-
-                    MessageBox.Show("Пациент успешно удален!", "Успех",
-                        MessageBoxButton.OK, MessageBoxImage.Information);
+                    _db.Patients.Attach(selectedPatient);
                 }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"Ошибка при удалении: {ex.Message}", "Ошибка",
-                        MessageBoxButton.OK, MessageBoxImage.Error);
-                }
+
+                _db.Patients.Remove(selectedPatient);
+                _db.SaveChanges();
+                UpdatePatients();
+                InitializeBirthYearFilter(); // Обновляем список годов после удаления
+                MessageBox.Show("Пациент успешно удален!",
+                    "Успех", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (System.Data.Entity.Infrastructure.DbUpdateException)
+            {
+                MessageBox.Show("Невозможно удалить пациента, так как он связан с другими записями в базе данных.",
+                    "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка при удалении: {ex.InnerException?.Message ?? ex.Message}",
+                    "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
     }

@@ -9,7 +9,7 @@ namespace HospitalD
 {
     public partial class PositionsPage : Page
     {
-        private HospitalDRmEntities _db = new HospitalDRmEntities();
+        private readonly HospitalDRmEntities _db = new HospitalDRmEntities();
 
         public PositionsPage()
         {
@@ -17,20 +17,76 @@ namespace HospitalD
             LoadPositions();
         }
 
-
         private void LoadPositions()
         {
-            // Отключаем отслеживание изменений для избежания конфликтов
-            PositionsDataGrid.ItemsSource = _db.Positions.AsNoTracking().ToList();
+            UpdatePositions();
+        }
+
+        private void UpdatePositions()
+        {
+            var currentPositions = _db.Positions.AsNoTracking().AsQueryable();
+
+            // Фильтрация по зарплате
+            if (SalaryFilter.SelectedIndex > 0)
+            {
+                switch (SalaryFilter.SelectedIndex)
+                {
+                    case 1: currentPositions = currentPositions.Where(p => p.Salary < 50000); break;
+                    case 2: currentPositions = currentPositions.Where(p => p.Salary >= 50000 && p.Salary < 100000); break;
+                    case 3: currentPositions = currentPositions.Where(p => p.Salary >= 100000 && p.Salary < 150000); break;
+                    case 4: currentPositions = currentPositions.Where(p => p.Salary >= 150000); break;
+                }
+            }
+
+            // Фильтрация по названию
+            if (!string.IsNullOrWhiteSpace(SearchPositionName.Text))
+            {
+                currentPositions = currentPositions.Where(p =>
+                    p.Name.ToLower().Contains(SearchPositionName.Text.ToLower()));
+            }
+
+            // Сортировка
+            switch (SortPositionComboBox.SelectedIndex)
+            {
+                case 0: currentPositions = currentPositions.OrderBy(p => p.Name); break;
+                case 1: currentPositions = currentPositions.OrderBy(p => p.Name); break;
+                case 2: currentPositions = currentPositions.OrderByDescending(p => p.Name); break;
+                case 3: currentPositions = currentPositions.OrderBy(p => p.Salary); break;
+                case 4: currentPositions = currentPositions.OrderByDescending(p => p.Salary); break;
+            }
+
+            PositionsDataGrid.ItemsSource = currentPositions.ToList();
+        }
+
+        private void SalaryFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            UpdatePositions();
+        }
+
+        private void SearchPositionName_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            UpdatePositions();
+        }
+
+        private void SortPositionComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            UpdatePositions();
+        }
+
+        private void CleanFilter_OnClick(object sender, RoutedEventArgs e)
+        {
+            SearchPositionName.Text = string.Empty;
+            SortPositionComboBox.SelectedIndex = 0;
+            SalaryFilter.SelectedIndex = 0;
+            UpdatePositions();
         }
 
         private void ButtonEdit_OnClick(object sender, RoutedEventArgs e)
         {
-            var selectedPosition = PositionsDataGrid.SelectedItem as Positions;
-            if (selectedPosition != null)
+            if (PositionsDataGrid.SelectedItem is Positions selectedPosition)
             {
-                // Передаем только ID для избежания конфликтов контекста
-                NavigationService.Navigate(new AddEditPositionPage(new Positions { ID_Position = selectedPosition.ID_Position }));
+                NavigationService.Navigate(new AddEditPositionPage(
+                    new Positions { ID_Position = selectedPosition.ID_Position }));
             }
             else
             {
@@ -39,7 +95,6 @@ namespace HospitalD
             }
         }
 
-        // Остальные методы остаются без изменений
         private void ButtonAdd_OnClick(object sender, RoutedEventArgs e)
         {
             NavigationService.Navigate(new AddEditPositionPage());
@@ -47,8 +102,7 @@ namespace HospitalD
 
         private void ButtonDel_OnClick(object sender, RoutedEventArgs e)
         {
-            var selectedPosition = PositionsDataGrid.SelectedItem as Positions;
-            if (selectedPosition == null)
+            if (!(PositionsDataGrid.SelectedItem is Positions selectedPosition))
             {
                 MessageBox.Show("Выберите должность для удаления!",
                     "Ошибка", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -63,15 +117,21 @@ namespace HospitalD
 
             try
             {
-                var positionToDelete = _db.Positions.Find(selectedPosition.ID_Position);
-                if (positionToDelete != null)
+                if (_db.Entry(selectedPosition).State == EntityState.Detached)
                 {
-                    _db.Positions.Remove(positionToDelete);
-                    _db.SaveChanges();
-                    LoadPositions();
-                    MessageBox.Show("Должность успешно удалена!",
-                        "Успех", MessageBoxButton.OK, MessageBoxImage.Information);
+                    _db.Positions.Attach(selectedPosition);
                 }
+
+                _db.Positions.Remove(selectedPosition);
+                _db.SaveChanges();
+                UpdatePositions();
+                MessageBox.Show("Должность успешно удалена!",
+                    "Успех", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (System.Data.Entity.Infrastructure.DbUpdateException)
+            {
+                MessageBox.Show("Невозможно удалить должность, так как она связана с другими записями в базе данных.",
+                    "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
             }
             catch (Exception ex)
             {
